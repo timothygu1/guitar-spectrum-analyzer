@@ -7,16 +7,16 @@
 
 #define I2S_SAMPLE_RATE   44100
 #define I2S_READ_LEN      1024
-#define AMPLITUDE         1
+#define AMPLITUDE         200
 #define ADC_INPUT_CHANNEL ADC1_CHANNEL_0  // GPIO36 on ESP32-WROVER
-#define LED_OUTPUT_PIN    23
+#define LED_OUTPUT_PIN    13
 #define COLOR_ORDER       GRB
 #define CHIPSET           WS2812B       // LED strip type
 #define MAX_MILLIAMPS     1000
 #define LED_VOLTS         5
 #define LED_BRIGHTNESS    50
 #define NUM_BANDS         16
-#define NOISE             2
+#define NOISE             10
 const uint8_t kMatrixWidth = 16;
 const uint8_t kMatrixHeight = 16;
 #define NUM_LEDS       (kMatrixWidth * kMatrixHeight)
@@ -73,26 +73,26 @@ uint8_t *i2s_read_buff;
 int total_bytes_read = 0;
 unsigned long start_time;
 
-void setup_i2s_adc()
-{
-    i2s_config_t i2s_config = {
-        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_ADC_BUILT_IN),
-        .sample_rate = I2S_SAMPLE_RATE,
-        .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
-        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
-        .communication_format = I2S_COMM_FORMAT_I2S_MSB,
-        .intr_alloc_flags = 0,
-        .dma_buf_count = 4,
-        .dma_buf_len = 1024,
-        .use_apll = false,
-        .tx_desc_auto_clear = false,
-        .fixed_mclk = 0
-    };
+// void setup_i2s_adc()
+// {
+//     i2s_config_t i2s_config = {
+//         .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_ADC_BUILT_IN),
+//         .sample_rate = I2S_SAMPLE_RATE,
+//         .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+//         .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
+//         .communication_format = I2S_COMM_FORMAT_I2S_MSB,
+//         .intr_alloc_flags = 0,
+//         .dma_buf_count = 4,
+//         .dma_buf_len = 1024,
+//         .use_apll = false,
+//         .tx_desc_auto_clear = false,
+//         .fixed_mclk = 0
+//     };
 
-    i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL);
-    i2s_set_adc_mode(ADC_UNIT_1, ADC_INPUT_CHANNEL);
-    i2s_adc_enable(I2S_NUM_0);
-}
+//     i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL);
+//     i2s_set_adc_mode(ADC_UNIT_1, ADC_INPUT_CHANNEL);
+//     i2s_adc_enable(I2S_NUM_0);
+// }
 
 void setup() {
     Serial.begin(115200);
@@ -102,9 +102,10 @@ void setup() {
     FastLED.setBrightness(LED_BRIGHTNESS);
     FastLED.clear();
 
-    setup_i2s_adc();
-    i2s_read_buff = (uint8_t *)calloc(I2S_READ_LEN, sizeof(uint8_t));
+    // setup_i2s_adc();
+    // i2s_read_buff = (uint8_t *)calloc(I2S_READ_LEN, sizeof(uint8_t));
     start_time = micros();
+    sampling_period_us = round(1000000 * (1.0 / I2S_SAMPLE_RATE));
 }
 
 void changeMode() {
@@ -126,6 +127,7 @@ void rainbowBars(int band, int barHeight) {
     }
   }
 }
+
 
 void purpleBars(int band, int barHeight) {
   int xStart = BAR_WIDTH * band;
@@ -201,8 +203,15 @@ void loop() {
       bandValues[i] = 0;
     }
     
-    size_t bytes_read;
-    i2s_read(I2S_NUM_0, (void *)i2s_read_buff, I2S_READ_LEN, &bytes_read, portMAX_DELAY);
+      // Sample the audio pin
+    for (int i = 0; i < I2S_READ_LEN; i++) {
+      newTime = micros();
+      vReal[i] = analogRead(36); // A conversion takes about 9.7uS on an ESP32
+      Serial.println(analogRead(36));
+      vImag[i] = 0;
+      while ((micros() - newTime) < sampling_period_us) { /* chill */ }
+    }
+    //i2s_read(I2S_NUM_0, (void *)i2s_read_buff, I2S_READ_LEN, &bytes_read, portMAX_DELAY);
     //total_bytes_read += bytes_read;
 
     // ----- DEBUG INFO -------
@@ -215,11 +224,11 @@ void loop() {
     */
     
     // 1024 bytes per sample
-    for (int i = 0; i < I2S_READ_LEN; i++) {
-      double voltage = ((double)i2s_read_buff[i] / 4095.0) * 3.3;
-      vReal[i] = voltage;
-      vImag[i] = 0;
-    }
+    // for (int i = 0; i < I2S_READ_LEN; i++) {
+    //   double voltage = ((double)i2s_read_buff[i] / 4095.0) * 3.3;
+    //   vReal[i] = voltage;
+    //   vImag[i] = 0;
+    // }
         
     // for (int i = 0; i < 16; i += 2) {
     //     uint16_t sample = i2s_read_buff[i] | (i2s_read_buff[i + 1] << 8);
