@@ -7,16 +7,16 @@
 
 #define I2S_SAMPLE_RATE   44100
 #define I2S_READ_LEN      1024
-#define AMPLITUDE         200
-#define ADC_INPUT_CHANNEL ADC1_CHANNEL_0  // GPIO36 on ESP32-WROVER
+#define AMPLITUDE         120
+#define ADC_INPUT_CHANNEL 35
 #define LED_OUTPUT_PIN    13
 #define COLOR_ORDER       GRB
 #define CHIPSET           WS2812B       // LED strip type
 #define MAX_MILLIAMPS     1000
 #define LED_VOLTS         5
-#define LED_BRIGHTNESS    50
+#define LED_BRIGHTNESS    40
 #define NUM_BANDS         16
-#define NOISE             10
+#define NOISE             50
 const uint8_t kMatrixWidth = 16;
 const uint8_t kMatrixHeight = 16;
 #define NUM_LEDS       (kMatrixWidth * kMatrixHeight)
@@ -60,7 +60,7 @@ CRGBPalette16 outrunPal = outrun_gp;
 CRGBPalette16 greenbluePal = greenblue_gp;
 CRGBPalette16 heatPal = redyellow_gp;
 uint8_t colorTimer = 0;
-bool autoChangePatterns = false;
+bool autoChangePatterns = true;
 int buttonPushCounter = 0;
 
 FastLED_NeoMatrix *matrix = new FastLED_NeoMatrix(leds, kMatrixWidth, kMatrixHeight,
@@ -72,6 +72,7 @@ FastLED_NeoMatrix *matrix = new FastLED_NeoMatrix(leds, kMatrixWidth, kMatrixHei
 uint8_t *i2s_read_buff;
 int total_bytes_read = 0;
 unsigned long start_time;
+
 
 // void setup_i2s_adc()
 // {
@@ -175,29 +176,9 @@ void outrunPeak(int band) {
   }
 }
 
-void waterfall(int band) {
-  int xStart = BAR_WIDTH * band;
-  double highestBandValue = 60000;        // Set this to calibrate your waterfall
-
-  // Draw bottom line
-  for (int x = xStart; x < xStart + BAR_WIDTH; x++) {
-    matrix->drawPixel(x, 0, CHSV(constrain(map(bandValues[band],0,highestBandValue,160,0),0,160), 255, 255));
-  }
-
-  // Move screen up starting at 2nd row from top
-  if (band == NUM_BANDS - 1){
-    for (int y = kMatrixHeight - 2; y >= 0; y--) {
-      for (int x = 0; x < kMatrixWidth; x++) {
-        int pixelIndexY = matrix->XY(x, y + 1);
-        int pixelIndex = matrix->XY(x, y);
-        leds[pixelIndexY] = leds[pixelIndex];
-      }
-    }
-  }
-}
-
 void loop() {
 
+    FastLED.clear();
     // Reset bandValues[]
     for (int i = 0; i<NUM_BANDS; i++){
       bandValues[i] = 0;
@@ -206,8 +187,8 @@ void loop() {
       // Sample the audio pin
     for (int i = 0; i < I2S_READ_LEN; i++) {
       newTime = micros();
-      vReal[i] = analogRead(36); // A conversion takes about 9.7uS on an ESP32
-      Serial.println(analogRead(36));
+      vReal[i] = analogRead(ADC_INPUT_CHANNEL); // A conversion takes about 9.7uS on an ESP32
+      //Serial.println(analogRead());
       vImag[i] = 0;
       while ((micros() - newTime) < sampling_period_us) { /* chill */ }
     }
@@ -245,23 +226,23 @@ void loop() {
     // Analyse FFT results
     for (int i = 2; i < (I2S_READ_LEN/2); i++){    // Don't use sample 0 and only first SAMPLES/2 are usable. Each array element represents a frequency bin and its value the amplitude.
       if (vReal[i] > NOISE) {
-        //16 bands, 6kHz top band
-        if (i<=2 )           bandValues[0]  += (int)vReal[i];
-        if (i>2   && i<=3  ) bandValues[1]  += (int)vReal[i];
-        if (i>3   && i<=4  ) bandValues[2]  += (int)vReal[i];
-        if (i>4   && i<=5  ) bandValues[3]  += (int)vReal[i];
-        if (i>5   && i<=7  ) bandValues[4]  += (int)vReal[i];
-        if (i>7   && i<=9  ) bandValues[5]  += (int)vReal[i];
-        if (i>9   && i<=12  ) bandValues[6]  += (int)vReal[i];
-        if (i>12   && i<=16  ) bandValues[7]  += (int)vReal[i];
-        if (i>16   && i<=22  ) bandValues[8]  += (int)vReal[i];
-        if (i>22   && i<=29  ) bandValues[9]  += (int)vReal[i];
-        if (i>29   && i<=39  ) bandValues[10]  += (int)vReal[i];
-        if (i>39   && i<=51  ) bandValues[11]  += (int)vReal[i];
-        if (i>51   && i<=69  ) bandValues[12]  += (int)vReal[i];
-        if (i>69   && i<=91  ) bandValues[13]  += (int)vReal[i];
-        if (i>91   && i<=122  ) bandValues[14]  += (int)vReal[i];
-        if (i>122             ) bandValues[15]  += (int)vReal[i];
+    
+      if (i<=12 )           bandValues[15]  += (int)vReal[i];
+if (i>12   && i<=13  ) bandValues[14]  += (int)vReal[i];
+if (i>13   && i<=15  ) bandValues[13]  += (int)vReal[i];
+if (i>15   && i<=16  ) bandValues[12]  += (int)vReal[i];
+if (i>16   && i<=18  ) bandValues[11]  += (int)vReal[i];
+if (i>18   && i<=19  ) bandValues[10]  += (int)vReal[i];
+if (i>19   && i<=21  ) bandValues[9]  += (int)vReal[i];
+if (i>21   && i<=23  ) bandValues[8]  += (int)vReal[i];
+if (i>23   && i<=25  ) bandValues[7]  += (int)vReal[i];
+if (i>25   && i<=28  ) bandValues[6]  += (int)vReal[i];
+if (i>28   && i<=31  ) bandValues[5]  += (int)vReal[i];
+if (i>31   && i<=34  ) bandValues[4]  += (int)vReal[i];
+if (i>34   && i<=37  ) bandValues[3]  += (int)vReal[i];
+if (i>37   && i<=40  ) bandValues[2]  += (int)vReal[i];
+if (i>40   && i<=44  ) bandValues[1]  += (int)vReal[i];
+if (i>44 && i<=100  ) bandValues[0]  += (int)vReal[i];
       }
     }
 
@@ -306,9 +287,6 @@ void loop() {
       case 4:
         changingBars(band, barHeight);
         break;
-      case 5:
-        waterfall(band);
-        break;
     }
 
      // Draw peaks
@@ -328,9 +306,6 @@ void loop() {
       case 4:
         // No peaks
         break;
-      case 5:
-        // No peaks
-        break;
     }
 
     // Save oldBarHeights for averaging later
@@ -339,17 +314,10 @@ void loop() {
 
     // Decay peak
     EVERY_N_MILLISECONDS(60) {
-        Serial.printf("Decay tick");  // Debug print
       for (byte band = 0; band < NUM_BANDS; band++) {
-        Serial.printf("peak[%d] = %d ", band, peak[band]);
-        if (peak[band] > 0) 
-        {
-          peak[band] -= 1;
-          Serial.printf("decayed to  %d",peak[band]);
-        }
-        Serial.printf("\n");
-      }
+        if (peak[band] > 0) peak[band] -= 1;
       colorTimer++;
+      }
     }
 
     // Used in some of the patterns
@@ -357,8 +325,8 @@ void loop() {
       colorTimer++;
     }
 
-    EVERY_N_SECONDS(10) {
-      if (autoChangePatterns) buttonPushCounter = (buttonPushCounter + 1) % 6;
+    EVERY_N_SECONDS(7) {
+      if (autoChangePatterns) buttonPushCounter = (buttonPushCounter + 1) % 5;
     }
 
     FastLED.show();
