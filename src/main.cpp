@@ -4,27 +4,18 @@
 #include <arduinoFFT.h>
 #include <FastLED.h>
 #include <FastLED_NeoMatrix.h>
+#include "patterns.h"
 
 #define I2S_SAMPLE_RATE   44100
 #define I2S_READ_LEN      1024
 #define AMPLITUDE         120
-#define ADC_INPUT_CHANNEL 35
 #define LED_OUTPUT_PIN    13
-#define COLOR_ORDER       GRB
-#define CHIPSET           WS2812B       // LED strip type
 #define MAX_MILLIAMPS     1000
-#define LED_VOLTS         5
-#define LED_BRIGHTNESS    40
-#define NUM_BANDS         16
-#define NOISE             50
+
 const uint8_t kMatrixWidth = 16;
 const uint8_t kMatrixHeight = 16;
-#define NUM_LEDS       (kMatrixWidth * kMatrixHeight)
-#define BAR_WIDTH      (kMatrixWidth  / (NUM_BANDS - 1))
-#define TOP            (kMatrixHeight - 0)
-#define SERPENTINE     true
 
-// Sampling and FFT
+// FFT
 unsigned int sampling_period_us;
 byte peak[] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};              // The length of these arrays must be >= NUM_BANDS
 int oldBarHeights[] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
@@ -34,7 +25,7 @@ double vImag[I2S_READ_LEN];
 unsigned long newTime;
 ArduinoFFT<double> FFT = ArduinoFFT<double>(vReal, vImag, I2S_READ_LEN, I2S_SAMPLE_RATE);
 
-// FastLED
+// LED palettes
 CRGB leds[NUM_LEDS];
 DEFINE_GRADIENT_PALETTE( purple_gp ) {
   0,   0, 212, 255,   //blue
@@ -61,7 +52,7 @@ CRGBPalette16 greenbluePal = greenblue_gp;
 CRGBPalette16 heatPal = redyellow_gp;
 uint8_t colorTimer = 0;
 bool autoChangePatterns = true;
-int buttonPushCounter = 0;
+int mode = 0;
 
 FastLED_NeoMatrix *matrix = new FastLED_NeoMatrix(leds, kMatrixWidth, kMatrixHeight,
   NEO_MATRIX_TOP        + NEO_MATRIX_LEFT +
@@ -71,29 +62,28 @@ FastLED_NeoMatrix *matrix = new FastLED_NeoMatrix(leds, kMatrixWidth, kMatrixHei
 // I2S
 uint8_t *i2s_read_buff;
 int total_bytes_read = 0;
-unsigned long start_time;
+//unsigned long start_time; // Debug
 
+void setup_i2s_adc()
+{
+    i2s_config_t i2s_config = {
+        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_ADC_BUILT_IN),
+        .sample_rate = I2S_SAMPLE_RATE,
+        .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
+        .communication_format = I2S_COMM_FORMAT_I2S_MSB,
+        .intr_alloc_flags = 0,
+        .dma_buf_count = 4,
+        .dma_buf_len = 1024,
+        .use_apll = false,
+        .tx_desc_auto_clear = false,
+        .fixed_mclk = 0
+    };
 
-// void setup_i2s_adc()
-// {
-//     i2s_config_t i2s_config = {
-//         .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_ADC_BUILT_IN),
-//         .sample_rate = I2S_SAMPLE_RATE,
-//         .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
-//         .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
-//         .communication_format = I2S_COMM_FORMAT_I2S_MSB,
-//         .intr_alloc_flags = 0,
-//         .dma_buf_count = 4,
-//         .dma_buf_len = 1024,
-//         .use_apll = false,
-//         .tx_desc_auto_clear = false,
-//         .fixed_mclk = 0
-//     };
-
-//     i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL);
-//     i2s_set_adc_mode(ADC_UNIT_1, ADC_INPUT_CHANNEL);
-//     i2s_adc_enable(I2S_NUM_0);
-// }
+    i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL);
+    i2s_set_adc_mode(ADC_UNIT_1, ADC1_CHANNEL_7);
+    i2s_adc_enable(I2S_NUM_0);
+}
 
 void setup() {
     Serial.begin(115200);
@@ -103,100 +93,35 @@ void setup() {
     FastLED.setBrightness(LED_BRIGHTNESS);
     FastLED.clear();
 
-    // setup_i2s_adc();
-    // i2s_read_buff = (uint8_t *)calloc(I2S_READ_LEN, sizeof(uint8_t));
-    start_time = micros();
-    sampling_period_us = round(1000000 * (1.0 / I2S_SAMPLE_RATE));
+    setup_i2s_adc();
+    i2s_read_buff = (uint8_t *)calloc(I2S_READ_LEN, sizeof(uint8_t));
+    //start_time = micros(); // Debug
 }
 
 void changeMode() {
   autoChangePatterns = false;
-  buttonPushCounter = (buttonPushCounter + 1) % 6;
+  mode = (mode + 1) % 6;
 }
 
 void startAutoMode() {
   autoChangePatterns = true;
 }
 
-// PATTERNS BELOW //
-
-void rainbowBars(int band, int barHeight) {
-  int xStart = BAR_WIDTH * band;
-  for (int x = xStart; x < xStart + BAR_WIDTH; x++) {
-    for (int y = TOP; y >= TOP - barHeight; y--) {
-      matrix->drawPixel(x, y, CHSV((x / BAR_WIDTH) * (255 / NUM_BANDS), 255, 255));
-    }
-  }
-}
-
-
-void purpleBars(int band, int barHeight) {
-  int xStart = BAR_WIDTH * band;
-  for (int x = xStart; x < xStart + BAR_WIDTH; x++) {
-    for (int y = TOP; y >= TOP - barHeight; y--) {
-      matrix->drawPixel(x, y, ColorFromPalette(purplePal, y * (255 / (barHeight + 1))));
-    }
-  }
-}
-
-void changingBars(int band, int barHeight) {
-  int xStart = BAR_WIDTH * band;
-  for (int x = xStart; x < xStart + BAR_WIDTH; x++) {
-    for (int y = TOP; y >= TOP - barHeight; y--) {
-      matrix->drawPixel(x, y, CHSV(y * (255 / kMatrixHeight) + colorTimer, 255, 255));
-    }
-  }
-}
-
-void centerBars(int band, int barHeight) {
-  int xStart = BAR_WIDTH * band;
-  for (int x = xStart; x < xStart + BAR_WIDTH; x++) {
-    if (barHeight % 2 == 0) barHeight--;
-    int yStart = ((kMatrixHeight - barHeight) / 2 );
-    for (int y = yStart; y <= (yStart + barHeight); y++) {
-      int colorIndex = constrain((y - yStart) * (255 / barHeight), 0, 255);
-      matrix->drawPixel(x, y, ColorFromPalette(heatPal, colorIndex));
-    }
-  }
-}
-
-void whitePeak(int band) {
-  int xStart = BAR_WIDTH * band;
-  int peakHeight = TOP - peak[band] - 1;
-  for (int x = xStart; x < xStart + BAR_WIDTH; x++) {
-    matrix->drawPixel(x, peakHeight, CHSV(0,0,255));
-  }
-}
-
-void outrunPeak(int band) {
-  int xStart = BAR_WIDTH * band;
-  int peakHeight = TOP - peak[band] - 1;
-  for (int x = xStart; x < xStart + BAR_WIDTH; x++) {
-    matrix->drawPixel(x, peakHeight, ColorFromPalette(outrunPal, peakHeight * (255 / kMatrixHeight)));
-  }
-}
-
 void loop() {
 
     FastLED.clear();
+    
     // Reset bandValues[]
     for (int i = 0; i<NUM_BANDS; i++){
       bandValues[i] = 0;
     }
-    
-      // Sample the audio pin
-    for (int i = 0; i < I2S_READ_LEN; i++) {
-      newTime = micros();
-      vReal[i] = analogRead(ADC_INPUT_CHANNEL); // A conversion takes about 9.7uS on an ESP32
-      //Serial.println(analogRead());
-      vImag[i] = 0;
-      while ((micros() - newTime) < sampling_period_us) { /* chill */ }
-    }
-    //i2s_read(I2S_NUM_0, (void *)i2s_read_buff, I2S_READ_LEN, &bytes_read, portMAX_DELAY);
-    //total_bytes_read += bytes_read;
+
+    size_t bytes_read;
+    i2s_read(I2S_NUM_0, (void *)i2s_read_buff, I2S_READ_LEN, &bytes_read, portMAX_DELAY);
 
     // ----- DEBUG INFO -------
     /*
+    total_bytes_read += bytes_read;
     unsigned long now = micros();
     float seconds = (now - start_time) / 1e6;
     float samples = total_bytes_read / 2.0;
@@ -204,45 +129,38 @@ void loop() {
     Serial.printf("Sampling rate: %.2f Hz\n", sampling_rate);
     */
     
-    // 1024 bytes per sample
-    // for (int i = 0; i < I2S_READ_LEN; i++) {
-    //   double voltage = ((double)i2s_read_buff[i] / 4095.0) * 3.3;
-    //   vReal[i] = voltage;
-    //   vImag[i] = 0;
-    // }
+    // Convert to voltage
+    for (int i = 0; i < I2S_READ_LEN; i++) {
+      double voltage = ((double)i2s_read_buff[i] / 4095.0) * 3.3;
+      vReal[i] = voltage;
+      vImag[i] = 0;
+    }
         
-    // for (int i = 0; i < 16; i += 2) {
-    //     uint16_t sample = i2s_read_buff[i] | (i2s_read_buff[i + 1] << 8);
-    //     Serial.printf("Raw bytes: %02X %02X => Sample: %d\n", i2s_read_buff[i], i2s_read_buff[i+1], sample);
-    // }
-    
     //Compute FFT
     FFT.dcRemoval();
     FFT.windowing(FFT_WIN_TYP_HAMMING, FFT_FORWARD);
     FFT.compute(FFT_FORWARD);
     FFT.complexToMagnitude();
-
     
     // Analyse FFT results
     for (int i = 2; i < (I2S_READ_LEN/2); i++){    // Don't use sample 0 and only first SAMPLES/2 are usable. Each array element represents a frequency bin and its value the amplitude.
       if (vReal[i] > NOISE) {
-    
       if (i<=12 )           bandValues[15]  += (int)vReal[i];
-if (i>12   && i<=13  ) bandValues[14]  += (int)vReal[i];
-if (i>13   && i<=15  ) bandValues[13]  += (int)vReal[i];
-if (i>15   && i<=16  ) bandValues[12]  += (int)vReal[i];
-if (i>16   && i<=18  ) bandValues[11]  += (int)vReal[i];
-if (i>18   && i<=19  ) bandValues[10]  += (int)vReal[i];
-if (i>19   && i<=21  ) bandValues[9]  += (int)vReal[i];
-if (i>21   && i<=23  ) bandValues[8]  += (int)vReal[i];
-if (i>23   && i<=25  ) bandValues[7]  += (int)vReal[i];
-if (i>25   && i<=28  ) bandValues[6]  += (int)vReal[i];
-if (i>28   && i<=31  ) bandValues[5]  += (int)vReal[i];
-if (i>31   && i<=34  ) bandValues[4]  += (int)vReal[i];
-if (i>34   && i<=37  ) bandValues[3]  += (int)vReal[i];
-if (i>37   && i<=40  ) bandValues[2]  += (int)vReal[i];
-if (i>40   && i<=44  ) bandValues[1]  += (int)vReal[i];
-if (i>44 && i<=100  ) bandValues[0]  += (int)vReal[i];
+      if (i>12   && i<=13  ) bandValues[14]  += (int)vReal[i];
+      if (i>13   && i<=15  ) bandValues[13]  += (int)vReal[i];
+      if (i>15   && i<=16  ) bandValues[12]  += (int)vReal[i];
+      if (i>16   && i<=18  ) bandValues[11]  += (int)vReal[i];
+      if (i>18   && i<=19  ) bandValues[10]  += (int)vReal[i];
+      if (i>19   && i<=21  ) bandValues[9]  += (int)vReal[i];
+      if (i>21   && i<=23  ) bandValues[8]  += (int)vReal[i];
+      if (i>23   && i<=25  ) bandValues[7]  += (int)vReal[i];
+      if (i>25   && i<=28  ) bandValues[6]  += (int)vReal[i];
+      if (i>28   && i<=31  ) bandValues[5]  += (int)vReal[i];
+      if (i>31   && i<=34  ) bandValues[4]  += (int)vReal[i];
+      if (i>34   && i<=37  ) bandValues[3]  += (int)vReal[i];
+      if (i>37   && i<=40  ) bandValues[2]  += (int)vReal[i];
+      if (i>40   && i<=44  ) bandValues[1]  += (int)vReal[i];
+      if (i>44 && i<=100  ) bandValues[0]  += (int)vReal[i];
       }
     }
 
@@ -261,17 +179,8 @@ if (i>44 && i<=100  ) bandValues[0]  += (int)vReal[i];
       peak[band] = min(TOP, barHeight);
     }
 
-    // -- DEBUG
-    
-    // Serial.print("Bar Heights: ");
-    // for (int i = 0; i < NUM_BANDS; i++) {
-    //   int barHeight = bandValues[i] / AMPLITUDE;
-    //   Serial.print(barHeight);
-    //   Serial.print(i < NUM_BANDS - 1 ? ", " : "\n");
-    // }   
-
      // Draw bars
-    switch (buttonPushCounter) {
+    switch (mode) {
       case 0:
         rainbowBars(band, barHeight);
         break;
@@ -290,7 +199,7 @@ if (i>44 && i<=100  ) bandValues[0]  += (int)vReal[i];
     }
 
      // Draw peaks
-    switch (buttonPushCounter) {
+    switch (mode) {
       case 0:
         whitePeak(band);
         break;
@@ -326,7 +235,7 @@ if (i>44 && i<=100  ) bandValues[0]  += (int)vReal[i];
     }
 
     EVERY_N_SECONDS(7) {
-      if (autoChangePatterns) buttonPushCounter = (buttonPushCounter + 1) % 5;
+      if (autoChangePatterns) mode = (mode + 1) % 5;
     }
 
     FastLED.show();
