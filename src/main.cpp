@@ -4,7 +4,14 @@
 #include <arduinoFFT.h>
 #include <FastLED.h>
 #include <FastLED_NeoMatrix.h>
+
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+
 #include "patterns.h"
+#include "ble.h"
 
 #define I2S_SAMPLE_RATE   44100
 #define I2S_READ_LEN      1024
@@ -95,6 +102,8 @@ void setup() {
 
     setup_i2s_adc();
     i2s_read_buff = (uint8_t *)calloc(I2S_READ_LEN, sizeof(uint8_t));
+    bleInit();
+
     //start_time = micros(); // Debug
 }
 
